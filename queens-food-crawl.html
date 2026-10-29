@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Flushing Food Crawl</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  html, body { height: 100%; margin: 0; padding: 0; font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+  #map { position: absolute; top: 52px; left: 0; right: 0; bottom: 0; background: #e5e3df; }
+
+  #header {
+    position: absolute; top: 0; left: 0; right: 0; height: 52px; z-index: 1001;
+    background: #1a73e8; color: #fff; display: flex; align-items: center;
+    padding: 0 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    font-size: 16px; font-weight: 600;
+  }
+
+  .gpin { position: relative; width: 26px; height: 36px; }
+  .gpin svg { position: absolute; top: 0; left: 0; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.35)); }
+  .gpin .pin-body { fill: #1a73e8; }
+  .gpin:hover .pin-body { fill: #1557b0; }
+
+  .place-label { background: transparent; border: none; box-shadow: none; padding: 0; margin: 0; }
+  .place-label .label-inner {
+    background: #ffffff; color: #1a1a1a; font-size: 12px; font-weight: 500;
+    padding: 2px 7px; border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,0,0,0.05);
+    white-space: nowrap; letter-spacing: 0.1px;
+  }
+  .leaflet-tooltip.place-label::before { display: none; }
+
+  .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+  .leaflet-popup-content { margin: 12px 14px; min-width: 180px; }
+  .poi-title { font-size: 15px; font-weight: 600; color: #202124; margin-bottom: 3px; }
+  .poi-address { font-size: 12.5px; color: #5f6368; line-height: 1.4; }
+  .poi-note { font-size: 12px; color: #b45309; margin-top: 6px; line-height: 1.4; }
+
+  .poi-mynotes { margin-top: 10px; padding-top: 8px; border-top: 1px solid #e8eaed; }
+  .poi-mynotes-label { font-size: 10.5px; font-weight: 600; color: #80868b; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+  .poi-mynotes-display { font-size: 12.5px; color: #202124; line-height: 1.45; white-space: pre-wrap; word-break: break-word; margin-bottom: 6px; }
+  .poi-mynotes-display a { color: #1a73e8; text-decoration: none; }
+  .poi-mynotes-display a:hover { text-decoration: underline; }
+  .poi-mynotes-empty { color: #9aa0a6; font-style: italic; }
+  .poi-textarea {
+    display: none; width: 100%; min-height: 64px; box-sizing: border-box;
+    font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid #dadce0;
+    border-radius: 6px; resize: vertical; margin-bottom: 6px;
+  }
+  .poi-btn {
+    font-size: 12px; font-weight: 500; color: #1a73e8; background: #fff;
+    border: 1px solid #dadce0; border-radius: 5px; padding: 4px 10px; cursor: pointer;
+  }
+  .poi-btn:hover { background: #f1f6fe; }
+  .poi-btn-save { color: #fff; background: #1a73e8; border-color: #1a73e8; margin-left: 6px; }
+  .poi-btn-save:hover { background: #1765cc; }
+
+  .leaflet-control-zoom { border-radius: 8px !important; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.3) !important; }
+</style>
+</head>
+<body>
+<div id="header">🥟 Flushing Food Crawl — 12 stops</div>
+<div id="map"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// Ordered stops for the Flushing food crawl (nearest-neighbor walking order)
+const crawl = [
+  { name: "Eight Jane Food Inc", lat: 40.7610268, lng: -73.8313702, address: "37-12 Main St, Flushing, NY 11354", note: "Order: Jianbing (Chinese crepe)." },
+  { name: "Giant Scallion Pancake", lat: 40.7596300, lng: -73.8302800, address: "135-45 Roosevelt Ave, Flushing, NY 11354" },
+  { name: "Joe's Steam Rice Roll (Flushing)", lat: 40.7590896, lng: -73.8295006, address: "136-20 Roosevelt Ave, Flushing, NY 11354", note: "Across the street from Landmark Quest Mall, not inside it." },
+  { name: "Landmark Quest Mall", lat: 40.7599200, lng: -73.8294200, address: "136-21 Roosevelt Ave, Flushing, NY 11354", note: "Food court building." },
+  { name: "Shanghai You Garden", lat: 40.7588429, lng: -73.8304623, address: "135-33 40th Rd, Flushing, NY 11354", note: "Order: Peking Duck Bao." },
+  { name: "White Bear", lat: 40.7587321, lng: -73.8316143, address: "135-02 Roosevelt Ave, Flushing, NY 11354", note: "Famous spicy wontons, cash only." },
+  { name: "Asian Jewels Seafood Restaurant", lat: 40.7591850, lng: -73.8333216, address: "133-30 39th Ave, Flushing, NY 11354" },
+  { name: "Chongqing Lao Zao", lat: 40.7606459, lng: -73.8330454, address: "37-04 Prince St, Flushing, NY 11354", note: "Chongqing-style spicy hot pot." },
+  { name: "Pin Pin Xiang", lat: 40.7610600, lng: -73.8311800, address: "37-12 Main St, Flushing, NY 11354", note: "Same building as Eight Jane Food Inc." },
+  { name: "99 Ranch Market Food Hall (Eat Up)", lat: 40.7612422, lng: -73.8307902, address: "37-11 Main St, Flushing, NY 11354", note: "'Eat Up' food hall inside the 99 Ranch Market supermarket — 20+ food stalls." },
+  { name: "One Chestnut (一粒栗)", lat: 40.7576227, lng: -73.8293915, address: "41-22 Main St, Flushing, NY 11355" },
+  { name: "Gao Xiao Pa", lat: 40.7579581, lng: -73.8283004, address: "41-39 Kissena Blvd, Flushing, NY 11355" }
+];
+
+const map = L.map('map', { zoomControl: false }).setView([40.7596, -73.8305], 16);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, USGS, Intermap, INCREMENT P'
+}).addTo(map);
+
+function pinIcon(number) {
+  const html = `
+    <div class="gpin">
+      <svg width="26" height="36" viewBox="0 0 26 36">
+        <path class="pin-body" d="M13 0C5.8 0 0 5.8 0 13c0 9.75 13 23 13 23s13-13.25 13-23C26 5.8 20.2 0 13 0z"/>
+        <circle cx="13" cy="13" r="7.5" fill="#ffffff"/>
+        <text x="13" y="13" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="700" fill="#202124">${number}</text>
+      </svg>
+    </div>`;
+  return L.divIcon({ className: '', html, iconSize: [26, 36], iconAnchor: [13, 34], popupAnchor: [0, -30] });
+}
+
+const NOTES_KEY = 'flushingCrawlNotes';
+function slugify(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
+function loadAllNotes() { try { return JSON.parse(localStorage.getItem(NOTES_KEY) || '{}'); } catch (e) { return {}; } }
+function saveNote(key, text) {
+  const notes = loadAllNotes();
+  if (text && text.trim()) notes[key] = text; else delete notes[key];
+  try { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); } catch (e) {}
+}
+function escapeHtml(str) { return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function linkify(text) {
+  return escapeHtml(text).replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+}
+
+function buildPopup(p, number) {
+  const key = slugify(p.name);
+  const container = document.createElement('div');
+
+  const title = document.createElement('div');
+  title.className = 'poi-title';
+  title.textContent = `${number}. ${p.name}`;
+  container.appendChild(title);
+
+  const addr = document.createElement('div');
+  addr.className = 'poi-address';
+  addr.textContent = p.address;
+  container.appendChild(addr);
+
+  if (p.note) {
+    const note = document.createElement('div');
+    note.className = 'poi-note';
+    note.textContent = p.note;
+    container.appendChild(note);
+  }
+
+  const savedNote = loadAllNotes()[key] || '';
+  const mynotes = document.createElement('div');
+  mynotes.className = 'poi-mynotes';
+
+  const label = document.createElement('div');
+  label.className = 'poi-mynotes-label';
+  label.textContent = 'My notes';
+  mynotes.appendChild(label);
+
+  const display = document.createElement('div');
+  display.className = 'poi-mynotes-display';
+  display.innerHTML = savedNote ? linkify(savedNote) : '<span class="poi-mynotes-empty">No notes yet</span>';
+  mynotes.appendChild(display);
+
+  const textarea = document.createElement('textarea');
+  textarea.className = 'poi-textarea';
+  textarea.value = savedNote;
+  textarea.placeholder = 'Dishes to order, video links, anything else...';
+  mynotes.appendChild(textarea);
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'poi-btn';
+  editBtn.type = 'button';
+  editBtn.textContent = savedNote ? 'Edit note' : 'Add note';
+  mynotes.appendChild(editBtn);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'poi-btn poi-btn-save';
+  saveBtn.type = 'button';
+  saveBtn.textContent = 'Save';
+  saveBtn.style.display = 'none';
+  mynotes.appendChild(saveBtn);
+
+  editBtn.addEventListener('click', () => {
+    display.style.display = 'none'; editBtn.style.display = 'none';
+    textarea.style.display = 'block'; saveBtn.style.display = 'inline-block';
+    textarea.focus();
+  });
+  saveBtn.addEventListener('click', () => {
+    saveNote(key, textarea.value);
+    const updated = textarea.value.trim();
+    display.innerHTML = updated ? linkify(updated) : '<span class="poi-mynotes-empty">No notes yet</span>';
+    display.style.display = 'block'; textarea.style.display = 'none'; saveBtn.style.display = 'none';
+    editBtn.textContent = updated ? 'Edit note' : 'Add note'; editBtn.style.display = 'inline-block';
+  });
+
+  container.appendChild(mynotes);
+  return container;
+}
+
+const latlngs = [];
+crawl.forEach((p, i) => {
+  const number = i + 1;
+  const marker = L.marker([p.lat, p.lng], { icon: pinIcon(number) }).addTo(map);
+  marker.bindTooltip(`<div class="label-inner">${number}. ${p.name}</div>`, {
+    permanent: true, direction: 'top', offset: [0, -32], className: 'place-label'
+  });
+  marker.bindPopup(() => buildPopup(p, number), { minWidth: 220, maxWidth: 280 });
+  latlngs.push([p.lat, p.lng]);
+});
+
+L.polyline(latlngs, { color: '#1a73e8', weight: 3, opacity: 0.8, dashArray: '1, 9', lineCap: 'round' }).addTo(map);
+</script>
+</body>
+</html>
